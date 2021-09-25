@@ -1,7 +1,225 @@
 * An Operational View of CodeQL
   
 * The codeql / C compiler comparison
-  
+*** The codeql / C compiler comparison
+   #+BEGIN_SRC text
+     Think Compiler (C):
+
+     got data.csv
+
+     edit source.c
+
+     gcc source.c -lc -o source
+
+     ./source < data.csv > output
+
+     examine output
+
+     =================================
+
+     Think Compiler (CodeQL):
+
+     got data: source.c
+     convert data:  codeql database create --command='gcc source.c' data.db
+
+     edit query.ql
+
+     codeql database analyze query.ql --format=csv --out=query.csv data.db
+
+     examine query.csv
+
+
+     ============================================
+
+     Think Compiler (C) with library:
+
+     got data.csv
+
+     edit source.c
+
+     gcc source.c -lc -lsqlite -o source
+
+     ./source < data.csv > output
+
+     examine output
+
+     =================================
+
+     Think Compiler (CodeQL) with library:
+
+     got data: source.c
+     convert data:  codeql database create --command='gcc source.c -lc -lsqlite' data.db
+
+     edit:             query.ql
+     sqlite modeling:  sqlite.qll
+
+     codeql database analyze query.ql --format=csv --out=query.csv data.db
+
+     examine query.csv
+
+     =================================
+
+     if we link the C code without -lc, sprintf() won't resolve.
+
+     similarly, if we comment out the ql library model for the printf* family, codeql
+     won't handle it and the query produces no results.
+
+
+     sqlite3_exec() -- explicit sink in our query
+
+     =================================
+
+     supported libraries / frameworks
+
+   #+END_SRC
+
+*** sql injection problem, compiler view
+    Think Compiler (C) with library:
+    #+BEGIN_SRC sh
+      # Prepare System
+      ./admin -c
+
+      # Convert data if needed
+      cat users.txt
+
+      # Edit your code
+      edit add-user.c
+
+      # Compile your code
+      clang -Wall add-user.c -lsqlite3 -o add-user
+
+      # Run against data
+      for user in `cat input.txt` ; do echo "$user" | ./add-user 2>> users.log ; done
+
+      # Examine results
+      ./admin -s
+
+    #+END_SRC
+
+*** sql injection problem, codeql view
+    Think Compiler (CodeQL) with library:
+    #+BEGIN_SRC sh
+      # Prepare System
+      export PATH=$HOME/local/vmsync/codeql250:"$PATH"
+
+      # Convert data if needed
+      SRCDIR=.
+      DB=add-user.db
+      cd $SRCDIR &&                                                           \
+          codeql database create --language=cpp                               \
+                 -s . -j 8 -v                                                 \
+                 $DB                                                          \
+                 --command='clang -Wall add-user.c -lsqlite3 -o add-user'
+
+      # Edit your code
+      edit SqlInjection.ql
+
+      # Compile & run your code
+      RESULTS=cpp-sqli.sarif
+      codeql database analyze                         \
+             -v --ram=14000 -j12 --rerun              \
+             --search-path ~/local/vmsync/ql          \
+             --format=sarif-latest                    \
+             --output=$RESULTS                        \
+             --                                       \
+             $DB                                      \
+             $SRCDIR/SqlInjection.ql
+
+      # Examine results
+      # Plain text, look for
+      #     "results" : [ {
+      #     and
+      #     "codeFlows" : [ {
+      edit $RESULTS                   
+      # Or use vs code's sarif viewer
+      # Or use the GHAS integration via actions
+
+    #+END_SRC
+
+
+
+*** getting a stock query to work
+    sql injection is also in the libary; let's see if it works without additions
+
+    if not, why note
+
+    what to (re)use
+
+    what to add, and where
+
+*** repository layout
+
+** Connecting to the compiler core
+   - IDEs: use vs code for full functionality, any lsp-using editor for
+     completion/jump to source
+   - choose a repository layout that best fits your custom queries' development
+     model (REFERENCE TO GITHUB REPO)
+   - check for library X support in the ql/ library.  Better yet, check for
+     particular function names.
+** Best practice CodeQL   
+
+** Key Ideas
+   All of following ideas follow from one simple observation: *The CodeQL CLI /
+   is a compiler and you should treat it as such*
+
+   - ghas setup and integration are almost completely independent of query
+     customization; take advantage of this.
+
+     If you can build your code on your desktop/laptop/own server, you don't have
+     to wait for GHAS integration to produce codeql databases.  
+
+     In fact, you should *start on your desktop/laptop/server* to find issues
+     around the build: memory / thread requirements, ensuring the build system
+     runs correctly when invoked from codeql, etc.
+
+   - use desktop-based code scanning earlier in workflow
+
+   - *cli setup / analysis should be done as prototype* for your github admins to
+     work off
+
+   - *customize scanning tools to actually get results:*
+     - bug bounty programs
+     - known entry / exit points for services
+
+   - 
+     Just like your CI/CD pipeline encapsulates your compiler cli tools,
+
+     github and GHAS encapsulate the codeql cli tools.
+
+     So you can always think about what makes sense for the cli, try it there, and
+     then update your GHAS workflow.
+      
+
+** Some Q&A via compiler analogy
+     + 
+       Q: Should we use the most recent version of codeql at all times?
+
+       A: Do you use the most recent version of compiler at all times?
+
+     + 
+       Q: We use git for our source code.  Should we version the codeql cli and
+       library, and query source?
+
+       A: The query source certainly.  Do you version your compiler and source libraries?
+     + 
+       Q: What are the versions of codeql?
+
+       A: Two parts:
+       #+BEGIN_SRC sh
+         0:$ codeql --version
+         CodeQL command-line toolchain release 2.5.0.
+       #+END_SRC
+       and, less obvious,
+       #+BEGIN_SRC sh
+         # CodeQL on $PATH
+         0:$ which codeql
+         /Users/hohn/local/vmsync/codeql250/codeql
+
+         # Library in parallel directory
+         0:$ pushd /Users/hohn/local/vmsync/ql/
+         0:$ git status
+         HEAD detached at codeql-cli/v2.5.6
+       #+END_SRC
 
 * SQL injection example
 ** Setup and sample run
