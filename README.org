@@ -1,78 +1,9 @@
 * An Operational View of CodeQL
+  These are notes used to develop the slides in [[./operational-view.key]]
+  and its [[./operational-view.pdf][pdf version]].  They may be handy for running the examples, and are a
+  simpler read than the slides.
   
 * The codeql / C compiler comparison
-*** The codeql / C compiler comparison
-   #+BEGIN_SRC text
-     Think Compiler (C):
-
-     got data.csv
-
-     edit source.c
-
-     gcc source.c -lc -o source
-
-     ./source < data.csv > output
-
-     examine output
-
-     =================================
-
-     Think Compiler (CodeQL):
-
-     got data: source.c
-     convert data:  codeql database create --command='gcc source.c' data.db
-
-     edit query.ql
-
-     codeql database analyze query.ql --format=csv --out=query.csv data.db
-
-     examine query.csv
-
-
-     ============================================
-
-     Think Compiler (C) with library:
-
-     got data.csv
-
-     edit source.c
-
-     gcc source.c -lc -lsqlite -o source
-
-     ./source < data.csv > output
-
-     examine output
-
-     =================================
-
-     Think Compiler (CodeQL) with library:
-
-     got data: source.c
-     convert data:  codeql database create --command='gcc source.c -lc -lsqlite' data.db
-
-     edit:             query.ql
-     sqlite modeling:  sqlite.qll
-
-     codeql database analyze query.ql --format=csv --out=query.csv data.db
-
-     examine query.csv
-
-     =================================
-
-     if we link the C code without -lc, sprintf() won't resolve.
-
-     similarly, if we comment out the ql library model for the printf* family, codeql
-     won't handle it and the query produces no results.
-
-
-     sqlite3_exec() -- explicit sink in our query
-
-     =================================
-
-     supported libraries / frameworks
-
-   #+END_SRC
-
 *** sql injection problem, compiler view
     Think Compiler (C) with library:
     #+BEGIN_SRC sh
@@ -85,10 +16,8 @@
       # Edit your code
       edit add-user.c
 
-      # Compile your code
+      # Compile & run your code
       clang -Wall add-user.c -lsqlite3 -o add-user
-
-      # Run against data
       for user in `cat input.txt` ; do echo "$user" | ./add-user 2>> users.log ; done
 
       # Examine results
@@ -131,35 +60,24 @@
       #     and
       #     "codeFlows" : [ {
       edit $RESULTS                   
+      # Or
+      jq --raw-output --join-output  -f sarif-summary.jq < cpp-sqli.sarif | less
       # Or use vs code's sarif viewer
       # Or use the GHAS integration via actions
 
     #+END_SRC
 
-
-
-*** getting a stock query to work
-    sql injection is also in the libary; let's see if it works without additions
-
-    if not, why note
-
-    what to (re)use
-
-    what to add, and where
-
-*** repository layout
-
 ** Connecting to the compiler core
    - IDEs: use vs code for full functionality, any lsp-using editor for
      completion/jump to source
    - choose a repository layout that best fits your custom queries' development
-     model (REFERENCE TO GITHUB REPO)
+     model 
    - check for library X support in the ql/ library.  Better yet, check for
      particular function names.
 ** Best practice CodeQL   
 
 ** Key Ideas
-   All of following ideas follow from one simple observation: *The CodeQL CLI /
+   All of following ideas follow from one simple observation: *The CodeQL CLI 
    is a compiler and you should treat it as such*
 
    - ghas setup and integration are almost completely independent of query
@@ -191,256 +109,139 @@
       
 
 ** Some Q&A via compiler analogy
-     + 
-       Q: Should we use the most recent version of codeql at all times?
+*** 
+    Q: Is the C standard library supported?
 
-       A: Do you use the most recent version of compiler at all times?
+    A: Much of it, typically from a conceptual level.
 
-     + 
-       Q: We use git for our source code.  Should we version the codeql cli and
-       library, and query source?
+    To find the supported APIs, search the [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/cpp/ql/src/][=ql/=]] library source tree.
 
-       A: The query source certainly.  Do you version your compiler and source libraries?
-     + 
-       Q: What are the versions of codeql?
+    For example, for a top-down search start with =cpp.qll= and notice the import
+    =import semmle.code.cpp.commons.Printf=.  Follow this to find the
+    [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/cpp/ql/src/semmle/code/cpp/commons/][=cpp.commons=]] module and see what it models:
+    #   /Users/hohn/local/vmsync/ql/cpp/ql/src/semmle/code/cpp/commons:
+    #+BEGIN_SRC text
+      Alloc.qll       Dependency.qll   NullTermination.qll   StringAnalysis.qll
+      Assertions.qll  Environment.qll  PolymorphicClass.qll  StructLikeClass.qll
+      Buffer.qll      Exclusions.qll   Printf.qll            Synchronization.qll
+      CommonType.qll  File.qll         Scanf.qll             VoidContext.qll
+      DateTime.qll    NULL.qll         Strcat.qll            unix/
+    #+END_SRC
 
-       A: Two parts:
-       #+BEGIN_SRC sh
-         0:$ codeql --version
-         CodeQL command-line toolchain release 2.5.0.
-       #+END_SRC
-       and, less obvious,
-       #+BEGIN_SRC sh
-         # CodeQL on $PATH
-         0:$ which codeql
-         /Users/hohn/local/vmsync/codeql250/codeql
+*** 
+    Q: Is library X supported?
 
-         # Library in parallel directory
-         0:$ pushd /Users/hohn/local/vmsync/ql/
-         0:$ git status
-         HEAD detached at codeql-cli/v2.5.6
-       #+END_SRC
+    A: If it is, you'll find it in the [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/cpp/ql/src/][=ql/=]] library source tree.  A whole-tree
+    search, =grep=-style, is easiest.
+    # /Users/hohn/local/vmsync/ql/cpp/ql/src:
 
-* SQL injection example
-** Setup and sample run
-  #+BEGIN_SRC sh
-    # Use a simple headline prompt 
-    PS1='
-    \033[32m---- SQL injection demo ----\[\033[33m\033[0m\]
-    $?:$ '
+    For example, to check support for sqlite:
+    #+BEGIN_SRC text
+      hohn@gh-hohn ~/local/vmsync/ql/cpp/ql/src
+      0:$ grep -l -R sqlite *
+      Security/CWE/CWE-313/CleartextSqliteDatabase.ql
+      Security/CWE/CWE-313/CleartextSqliteDatabase.c
+      semmle/code/cpp/security/Security.qll
+    #+END_SRC
+    So we have a query (=.ql=) and a library (=.qll=); look at both to get
+    some ideas:
+     
+**** =Security/CWE/CWE-313/CleartextSqliteDatabase.ql= has some info [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/cpp/ql/src/Security/CWE/CWE-313/CleartextSqliteDatabase.ql#L2][in the header]]
+     #+begin_src javascript
+       /**
+        ,* @name Cleartext storage of sensitive information in an SQLite database
+        ,* @description Storing sensitive information in a non-encrypted
+        ,*              database can expose it to an attacker.
+        ,*/
+     #+end_src
+     and [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/cpp/ql/src/Security/CWE/CWE-313/CleartextSqliteDatabase.ql#L25][a promising class]]:
+     #+begin_src javascript
+       class SqliteFunctionCall extends FunctionCall {
+           SqliteFunctionCall() { this.getTarget().getName().matches("sqlite%") }
 
-    
-    # Build
-    ./build.sh
+           Expr getASource() { result = this.getAnArgument() }
+       }
+     #+end_src
+**** =semmle/code/cpp/security/Security.qll= has [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/cpp/ql/src/semmle/code/cpp/security/Security.qll#L12][some very promising entries]]
+     #+begin_src javascript
+       /**
+        ,* Extend this class to customize the security queries for
+        ,* a particular code base. Provide no constructor in the
+        ,* subclass, and override any methods that need customizing.
+        ,*/
+       class SecurityOptions extends string {
+           ;;
+           predicate sqlArgument(string function, int arg) {
+               ;;
+               // SQLite3 C API
+               function = "sqlite3_exec" and arg = 1
+           }
+           ;;
+           /**
+            ,* The argument of the given function is filled in from user input.
+            ,*/
+           predicate userInputArgument(FunctionCall functionCall, int arg) {
+               ;;
+               fname = "scanf" and arg >= 1
+               ;;
+           }
+           ;;
+       }
+     #+end_src
 
-    # Prepare db
-    ./admin -r
-    ./admin -c
-    ./admin -s 
+     This is a library, so some sample uses would be nice.  Another search via
+     : grep  -nH  -R SecurityOptions *
 
-    # Add regular user interactively
-    ./add-user 2>> users.log
-    First User
+     [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/docs/codeql/ql-training/cpp/global-data-flow-cpp.rst#L59][finds documentation]]:
+     #+begin_src text
+       docs/codeql/ql-training/cpp/global-data-flow-cpp.rst:59:The library class ``SecurityOptions`` provides a (configurable) model of what counts as user-controlled data:
+     #+end_src
+     and an [[https://github.com/github/codeql/blob/87ee7849a929fff00343071315fa8108976d5c70/cpp/ql/src/semmle/code/cpp/security/SecurityOptions.qll#L16][extension point]]:
+     #+begin_src text
+       cpp/ql/src/semmle/code/cpp/security/SecurityOptions.qll:16:class CustomSecurityOptions extends SecurityOptions
+     #+end_src
+     #+begin_src javascript
+       /**
+        ,* This class overrides `SecurityOptions` and can be used to add project
+        ,* specific customization.
+        ,*/
+       class CustomSecurityOptions extends SecurityOptions {...}
+     #+end_src
 
-    
-    # Regular user via "external" process
-    echo "User Outside" | ./add-user 2>> users.log
+*** 
+    Q: How should we go about modeling our libraries with CodeQL?
 
-    # Check
-    ./admin -s
+    A: Follow the way you use a C library, say =sqlite3=.  Your code includes only
+    =sqlite3.h=; you use, but don't care about, =libsqlite3.a=.  
 
-    # Add Johnny Droptable 
-    ./add-user 2>> users.log
-    Johnny'); DROP TABLE users; --
+    Thus for CodeQL: don't try to model the library internals, only model the
+    parts of the API you actually use.
 
-    # And the problem:
-    ./admin -s
-    
-    # Check the log
-    tail users.log
-  #+END_SRC
+    For other languages, you need also only model the exposed API.
 
-** Identify the problem
-   =./add-user= is reading from =STDIN=, and writing to a database; looking at the code in
-   [[./add-user.c]] leads to
-   : count = read(STDIN_FILENO, buf, BUFSIZE - 1);
-   for the read and 
-   : rc = sqlite3_exec(db, query, NULL, 0, &zErrMsg);
-   for the write.
+*** 
+    Q: Should we use the most recent version of codeql at all times?
 
-   This problem is thus a dataflow problem; in codeql terminology we have
-   - a /source/ at the =read(STDIN_FILENO, buf, BUFSIZE - 1);=
-   - a /sink/ at the =sqlite3_exec(db, query, NULL, 0, &zErrMsg);=
+    A: Follow the way you use your compiler.  Do you use the most recent version
+    of compiler at all times, or do you use a rolling release cycle?
 
-   We write codeql to identify these two, and then connect them via
-   - a /dataflow configuration/ -- for this problem, the more general /taintflow
-     configuration/. 
-   
-** Build codeql database
-   To get started, build the codeql database (adjust paths to your setup):
-   #+BEGIN_SRC sh
-     # Build the db with source commit id.
-     export PATH=$HOME/local/vmsync/codeql250:"$PATH"
-     SRCDIR=$HOME/local/codeql-training-material.cpp-sqli/cpp/codeql-dataflow-sql-injection
-     DB=$SRCDIR/cpp-sqli-$(cd $SRCDIR && git rev-parse --short HEAD)
+    To get your current version's info:
+    #+BEGIN_SRC sh
+      hohn@gh-hohn ~/local/vmsync/ql/cpp/ql/src
+      0:$ codeql --version
+      CodeQL command-line toolchain release 2.5.0.
+      Copyright (C) 2019-2021 GitHub, Inc.
+      Unpacked in: /Users/hohn/local/vmsync/codeql250
+         Analysis results depend critically on separately distributed query and
+         extractor modules. To list modules that are visible to the toolchain,
+         use 'codeql resolve qlpacks' and 'codeql resolve languages'.
+    #+END_SRC
 
-     echo $DB
-     test -d "$DB" && rm -fR "$DB"
-     mkdir -p "$DB"
+    You should match the CodeQL cli version to the CodeQL library version; 
+    the [[https://github.com/github/codeql/releases][library releases]] have =codeql-cli/<VERSION>= tags to allow matching with
+    the [[https://github.com/github/codeql-cli-binaries/releases/tag/v2.6.2][binaries]].
 
-     cd $SRCDIR && codeql database create --language=cpp -s . -j 8 -v $DB --command='./build.sh'
-   #+END_SRC
+    When using git for the library, you should check out the appropriate version
+    via, e.g.,
+    : cd $HOME/local/vmsync/ql && git checkout codeql-cli/v2.5.9
 
-   Then add this database directory to your VS Code =DATABASES= tab.
-
-
-** Build codeql database in steps
-   For larger projects, using a single command to build everything is costly when
-   any part of the build fails.
-   
-   To build a database in steps, use the following sequence, adjusting paths to
-   your setup:
-   #+BEGIN_SRC sh
-     # Build the db with source commit id.
-     export PATH=$HOME/local/vmsync/codeql250:"$PATH"
-     SRCDIR=$HOME/local/codeql-training-material.cpp-sqli/cpp/codeql-dataflow-sql-injection
-     DB=$SRCDIR/cpp-sqli-$(cd $SRCDIR && git rev-parse --short HEAD)
-
-     # Check paths
-     echo $DB
-     echo $SRCDIR
-
-     # Prepare db directory
-     test -d "$DB" && rm -fR "$DB"
-     mkdir -p "$DB"
-
-     # Run the build
-     cd $SRCDIR
-     codeql database init --language=cpp -s . -v $DB
-     # Repeat trace-command as needed to cover all targets
-     codeql database trace-command -v $DB -- make 
-     codeql database finalize -j4 $DB
-   #+END_SRC
-
-   Then add this database directory to your VS Code =DATABASES= tab.
-
-** Develop the query bottom-up
-   1. Identify the /source/ part of the 
-      : read(STDIN_FILENO, buf, BUFSIZE - 1);
-      expression, the =buf= argument.  
-      Start from a =from..where..select=, then convert to a predicate.
-
-   2. Identify the /sink/ part of the
-      : sqlite3_exec(db, query, NULL, 0, &zErrMsg);
-      expression, the =query= argument.  Again start from =from..where..select=,
-      then convert to a predicate.
-
-   3. Fill in the /taintflow configuration/ boilerplate
-      #+BEGIN_SRC java
-        class CppSqli extends TaintTracking::Configuration {
-            CppSqli() { this = "CppSqli" }
-
-            override predicate isSource(DataFlow::Node node) {
-                none()
-                    }
-
-            override predicate isSink(DataFlow::Node node) {
-                none()
-                    }
-        }
-      #+END_SRC
-
-      Note that an inout-argument in C/C++ (the =buf= pointer is passed to =read=
-      and points to updated data after the return) is accessed as a codeql source
-      via
-      : source.(DataFlow::PostUpdateNode).getPreUpdateNode().asExpr()
-      instead of the usual
-      : source.asExpr()
-
-   The final query (without =isAdditionalTaintStep=) is
-   #+BEGIN_SRC java
-     /**
-      ,* @name SQLI Vulnerability
-      ,* @description Using untrusted strings in a sql query allows sql injection attacks.
-      ,* @kind path-problem
-      ,* @id cpp/SQLIVulnerable
-      ,* @problem.severity warning
-      ,*/
-
-     import cpp
-     import semmle.code.cpp.dataflow.TaintTracking
-     import DataFlow::PathGraph
-
-     class SqliFlowConfig extends TaintTracking::Configuration {
-         SqliFlowConfig() { this = "SqliFlow" }
-
-         override predicate isSource(DataFlow::Node source) {
-             // count = read(STDIN_FILENO, buf, BUFSIZE);
-             exists(FunctionCall read |
-                 read.getTarget().getName() = "read" and
-                 read.getArgument(1) = source.(DataFlow::PostUpdateNode).getPreUpdateNode().asExpr()
-             )
-         }
-
-         override predicate isSink(DataFlow::Node sink) {
-             // rc = sqlite3_exec(db, query, NULL, 0, &zErrMsg);
-             exists(FunctionCall exec |
-                 exec.getTarget().getName() = "sqlite3_exec" and
-                 exec.getArgument(1) = sink.asExpr()
-             )
-         }
-     }
-
-     from SqliFlowConfig conf, DataFlow::PathNode source, DataFlow::PathNode sink
-     where conf.hasFlowPath(source, sink)
-     select sink, source, sink, "Possible SQL injection"
-   #+END_SRC
-
-** Optional: sarif file review of the results
-   Query results are available in several output formats using the cli.  The
-   following produces the sarif format, a json-based result description.
-
-   #+BEGIN_SRC sh
-     # The setup information from before
-     export PATH=$HOME/local/vmsync/codeql250:"$PATH"
-     SRCDIR=$HOME/local/codeql-training-material.cpp-sqli/cpp/codeql-dataflow-sql-injection
-     DB=$SRCDIR/cpp-sqli-$(cd $SRCDIR && git rev-parse --short HEAD)
-
-     # Check paths
-     echo $DB
-     echo $SRCDIR
-
-     # To see the help
-     codeql database analyze -h
-
-     # Run a query
-     codeql database analyze                         \
-            -v                                       \
-            --ram=14000                              \
-            -j12                                     \
-            --rerun                                  \
-            --search-path ~/local/vmsync/ql          \
-            --format=sarif-latest                    \
-            --output cpp-sqli.sarif                  \
-            --                                       \
-            $DB                                      \
-            $SRCDIR/SqlInjection.ql
-
-     # Examine the file in an editor
-     edit cpp-sqli.sarif
-   #+END_SRC
-
-   An example of using the sarif data is in the the jq script [[./sarif-summary.jq]].
-   When run against the sarif input via 
-   #+BEGIN_SRC sh
-     jq --raw-output --join-output  -f sarif-summary.jq < cpp-sqli.sarif > cpp-sqli.txt
-   #+END_SRC
-   it produces output in a form close to that of compiler error messages:
-   #+BEGIN_SRC text
-     query-id: message line 
-         Path
-            ...
-         Path
-            ...
-   #+END_SRC
-   
