@@ -4,7 +4,11 @@
 			"path": "."
 		},
 		{
-			"path": "../../../vmsync/ql"
+			"name": "[add-user.db source archive]",
+			"uri": "codeql-zip-archive://0-57/Users/hohn/w/codeql-operational-view/add-user.db/src.zip"
+		},
+		{
+			"path": "../../local/vmsync/ql"
 		}
 	],
 	"settings": {
