@@ -3,6 +3,10 @@
   and its [[./operational-view.pdf][pdf version]].  They may be handy for running the examples, and are a
   simpler read than the slides.
   
+  A diagram view of the use of codeql is in [[./notes/codeql-build.drawio]].  To edit
+  / view / print these, use the open-source version of [[https://www.drawio.com][drawio]].  It can be used in
+  the browser or downloaded.
+
 * The codeql / C compiler comparison
 *** sql injection problem, compiler view
     Think Compiler (C) with library:
